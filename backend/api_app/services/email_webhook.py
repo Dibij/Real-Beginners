@@ -28,13 +28,13 @@ def detect_email_intent(text: str) -> bool:
             
     return False
 
-def trigger_email_webhook(text: str) -> bool:
+def trigger_email_webhook(text: str, recipient: str = None) -> bool:
     """
     Send the transcribed text to the email webhook.
     """
     try:
-        logger.info(f"--- TRIGGERING EMAIL WEBHOOK ---")
-        payload = {"text": text}
+        logger.info(f"--- TRIGGERING EMAIL WEBHOOK TO {recipient} ---")
+        payload = {"text": text, "recipient": recipient}
         response = requests.post(WEBHOOK_URL, json=payload, timeout=10)
         
         if response.status_code == 200:

@@ -97,11 +97,11 @@ def create_calendar_event(user, summary, start_time, end_time=None, description=
             'description': description,
             'start': {
                 'dateTime': start_time,
-                'timeZone': 'UTC',
+                'timeZone': settings.TIME_ZONE,
             },
             'end': {
                 'dateTime': end_time,
-                'timeZone': 'UTC',
+                'timeZone': settings.TIME_ZONE,
             },
         }
 

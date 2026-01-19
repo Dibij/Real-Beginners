@@ -1,8 +1,12 @@
 from rest_framework import generics, permissions, status, response, pagination
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
-from .models import Note, Category, Tag, NoteAudio, ActionItem, ActionItemHistory, SearchResult, Notification, Alarm, GoogleOAuthToken
-from .serializers import UserSerializer, NoteSerializer, CategorySerializer, TagSerializer, ActionItemSerializer, ActionItemHistorySerializer, AlarmSerializer
+from .models import Note, Category, Tag, NoteAudio, ActionItem, ActionItemHistory, SearchResult, Notification, Alarm, GoogleOAuthToken, Habit, HabitLog
+from .serializers import (
+    UserSerializer, NoteSerializer, CategorySerializer, TagSerializer, 
+    ActionItemSerializer, ActionItemHistorySerializer, AlarmSerializer,
+    HabitSerializer, HabitLogSerializer, SearchResultSerializer, NotificationSerializer
+)
 from django.utils import timezone
 from datetime import timedelta
 from .utils import derive_key, encrypt_content, decrypt_content
@@ -134,18 +138,24 @@ class NoteListCreateView(generics.ListCreateAPIView):
                         final_content = f"{initial_content}\n\nTranscription:\n{full_transcript}"
                 else:
                     final_content = full_transcript
-                
+            
+            # Always encrypt current content
+            if final_content:
                 note.content = encrypt_content(final_content, key)
-                
-                # AI Extraction
+            
+            # AI Extraction (Runs on final_content if not empty)
+            ai_results = {}
+            if final_content and final_content not in ["Audio Recording", "Processing...", "Transcribing..."]:
                 logger.info("--- ASYNC AI EXTRACTION ---")
-                current_time_str = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
+                current_time_str = timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M:%S')
                 pending_items = ActionItem.objects.filter(user=user, status='Pending').values('id', 'content', 'item_type')
-                ai_results = extract_action_items(full_transcript, list(pending_items), current_time=current_time_str)
+                ai_results = extract_action_items(final_content, list(pending_items), current_time=current_time_str)
                 logger.info(f"--- AI RESULTS: {ai_results} ---")
                 
                 note.priority = ai_results.get('priority', 'Low').lower()
-                note.summary = ai_results.get('summary', 'Processed voice note')
+                note.summary = ai_results.get('summary', 'Processed note')
+                
+                # Process Updates
                 
                 # Process Updates
                 for update in ai_results.get('updates', []):
@@ -238,6 +248,44 @@ class NoteListCreateView(generics.ListCreateAPIView):
                         
                         loc_val = item.get('location')
 
+                        ai_feedback_val = None
+                        if item_type == 'Habit':
+                            habit_name = item.get('habit_name') or content or 'General'
+                            value = item.get('value', 1)
+                            
+                            habit_obj, _ = Habit.objects.get_or_create(
+                                user=user, name=habit_name, defaults={'goal': f"Focus on {habit_name}"}
+                            )
+                            
+                            recent_logs = HabitLog.objects.filter(
+                                habit=habit_obj, created_at__gte=timezone.now() - timedelta(days=7)
+                            )
+                            total_value = sum([log.value for log in recent_logs]) + value
+                            
+                            if habit_name.lower() == 'reading' and total_value < 10:
+                                ai_feedback_val = f"You've only read {total_value} pages this week. Aim for at least 10 to build the habit!"
+                            elif habit_name.lower() == 'exercise' and total_value < 3:
+                                ai_feedback_val = "Consistent activity is key. Try to squeeze in a few more sessions!"
+                            elif total_value < 5:
+                                ai_feedback_val = f"Great start on {habit_name}! Try to reach a weekly total of 5 to see real progress."
+                            else:
+                                ai_feedback_val = "Keep it up! You're doing great on your habits."
+                        
+                        elif item_type == 'StudyNote':
+                            ai_feedback_val = "Fascinating! I've added this to your study notes for later review."
+
+                        # Auto-create alarm for Reminders if not explicitly in AI alarms
+                        if not linked_alarm and due_date_val and item_type == 'Reminder':
+                            alarm_time = due_date_val.time()
+                            alarm_obj = Alarm.objects.filter(user=user, time=alarm_time, is_active=True).first()
+                            if not alarm_obj:
+                                alarm_obj = Alarm.objects.create(
+                                    user=user,
+                                    time=alarm_time,
+                                    label=f"Reminder: {content[:30]}"
+                                )
+                            linked_alarm = alarm_obj
+
                         ai_item = ActionItem.objects.create(
                             user=user, note=note,
                             item_type=item_type,
@@ -246,7 +294,8 @@ class NoteListCreateView(generics.ListCreateAPIView):
                             end_time=end_time_val,
                             location=loc_val,
                             linked_alarm=linked_alarm,
-                            status='Pending'
+                            status='Pending',
+                            ai_feedback=ai_feedback_val
                         )
                         
                         # Google Calendar Sync for Meetings
@@ -268,21 +317,44 @@ class NoteListCreateView(generics.ListCreateAPIView):
                             details=f"Extracted from note {note.id}",
                             reasoning=item.get('reasoning', "Extracted from voice note")
                         )
+
+                        # Update HabitLog with calculated feedback
+                        if item_type == 'Habit':
+                            HabitLog.objects.create(
+                                habit=habit_obj,
+                                note=note,
+                                value=value,
+                                unit=item.get('unit', 'units'),
+                                comment=content,
+                                ai_feedback=ai_feedback_val
+                            )
+                            logger.info(f"--- HABIT LOG CREATED: {habit_name} - {ai_feedback_val} ---")
                     else:
                          logger.info(f"Duplicate ActionItem skipped: {content}")
             else:
-                note.summary = "Voice note (no transcription)"
+                if not final_content or final_content in ["Processing...", "Transcribing...", "Audio Recording"]:
+                    note.summary = "Voice note (no content)"
+                else:
+                    note.summary = "Processed note"
             
             note.save()
             
-            # Email Intent Detection
-            if transcripts:
-                if detect_email_intent(full_transcript):
-                    logger.info("Detected Intent: Email")
-                    trigger_email_webhook(full_transcript)
+            # Intent Detection
+            email_info = ai_results.get('email_intent', {})
+            if email_info.get('detected'):
+                recipient = email_info.get('recipient')
+                logger.info(f"Detected AI Intent: Email to {recipient}")
+                trigger_email_webhook(final_content, recipient=recipient)
+            elif final_content:
+                if detect_email_intent(final_content):
+                    logger.info("Detected Regex Intent: Email")
+                    trigger_email_webhook(final_content)
                 
-                # Check search if not email (or both?) - Assuming independent checks
-                search_queries = detect_search_intent(full_transcript)
+                # Check search
+                search_queries = detect_search_intent(final_content)
+                if not search_queries and ai_results.get('search_intent', {}).get('detected'):
+                    search_queries = ai_results.get('search_intent', {}).get('queries', [])
+
                 if search_queries:
                     logger.info("Detected Intent: Search")
                     for query in search_queries:
@@ -304,12 +376,21 @@ class NoteListCreateView(generics.ListCreateAPIView):
                                 link='/dashboard'
                             )
                 else:
-                    if not detect_email_intent(full_transcript):
+                    if not detect_email_intent(final_content):
                          logger.info("Detected Intent: None")
 
             logger.info(f"--- NOTE {note_id} PROCESSING COMPLETE ---")
+            note.save()
+
         except Exception as e:
             logger.error(f"--- ERROR PROCESSING NOTE {note_id}: {e} ---")
+            try:
+                # Use global Note model
+                fail_note = Note.objects.get(id=note_id)
+                fail_note.summary = f"Error: {str(e)[:50]}..."
+                fail_note.save()
+            except Exception as inner_e:
+                logger.error(f"Failed to save error status to note: {inner_e}")
 
 class ActionItemListView(generics.ListCreateAPIView):
     serializer_class = ActionItemSerializer
@@ -570,6 +651,23 @@ class ActionItemHistoryListView(generics.ListAPIView):
         # Return last 50 history items
         return ActionItemHistory.objects.filter(user=self.request.user).order_by('-created_at')[:50]
 
+class HabitListView(generics.ListCreateAPIView):
+    serializer_class = HabitSerializer
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get_queryset(self):
+        return Habit.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+class HabitDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = HabitSerializer
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get_queryset(self):
+        return Habit.objects.filter(user=self.request.user)
+
 
 class StandardResultsSetPagination(pagination.PageNumberPagination):
     page_size = 10
@@ -578,7 +676,6 @@ class StandardResultsSetPagination(pagination.PageNumberPagination):
 
 class SearchResultListView(generics.ListAPIView):
     """List search results for the authenticated user."""
-    from .serializers import SearchResultSerializer
     serializer_class = SearchResultSerializer
     permission_classes = (permissions.IsAuthenticated,)
     pagination_class = StandardResultsSetPagination
@@ -590,7 +687,6 @@ class SearchResultListView(generics.ListAPIView):
 
 class NotificationListView(generics.ListAPIView):
     """List unread notifications for the user."""
-    from .serializers import NotificationSerializer
     serializer_class = NotificationSerializer
     permission_classes = (permissions.IsAuthenticated,)
 
@@ -606,3 +702,4 @@ class NotificationMarkReadView(generics.UpdateAPIView):
 
     def perform_update(self, serializer):
         serializer.save(is_read=True)
+
