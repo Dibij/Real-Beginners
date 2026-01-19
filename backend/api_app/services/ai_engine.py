@@ -35,6 +35,11 @@ def extract_action_items(content, pending_items=[], current_time=None):
     - DEDUPLICATION: Do NOT create redundant items. If two items refer to the same thing (e.g., 'buy clothes' and 'buy dresses'), MERGE them into one specific item.
     - CONSOLIDATION: Group similar actions together. Avoid listing the same intent twice with slightly different wording.
     - RELATIVE TIME: If the user says something like 'in one hour' or 'tomorrow morning', use the {time_context or 'current time'} to calculate the EXACT 'due_date' (YYYY-MM-DD HH:MM:SS) or alarm 'time' (HH:MM). Do NOT use placeholders like 'one hour from now' or 'YYYY-MM-DD'.
+    - INTERVAL ALARMS: If the user says 'create 5 alarms starting at 11 am spacing 15 mins', be smart and calculate the EXACT times for each: '11:00', '11:15', '11:30', '11:45', '12:00'. Add each result as a separate entry in the 'alarms' list.
+    - DUAL EXTRACTION: If a user says 'remind me to buy sausages tonight', extract BOTH a 'Shopping' item with a 'due_date' AND an 'alarm' at that same time. Use matching labels/content for linking.
+    - MEETINGS: If the user says 'schedule a meeting with X at Y', extract it as a 'Meeting' item. 
+      CRITICAL: You MUST extract the 'due_date' (start time) and 'end_time' as EXACT timestamps (YYYY-MM-DD HH:MM:SS) based on the context. If no duration is specified, assume 1 hour.
+      Include 'location' if mentioned. For meetings, always populate 'due_date'.
     
     {pending_context}
     
@@ -45,13 +50,13 @@ def extract_action_items(content, pending_items=[], current_time=None):
       "priority": "High/Medium/Low",
       "summary": "one sentence summary",
       "new_items": [
-        {{"type": "Task/Reminder/Shopping/Fact", "content": "detail", "due_date": "YYYY-MM-DD HH:MM:SS (optional)", "reasoning": "why did you add this? e.g. User mentioned wanting to sell laptop"}}
+        {{"type": "Task/Reminder/Shopping/Fact/Meeting", "content": "detail", "due_date": "YYYY-MM-DD HH:MM:SS (optional)", "end_time": "YYYY-MM-DD HH:MM:SS (optional)", "location": "string (optional)", "reasoning": "..."}}
       ],
       "alarms": [
         {{"time": "HH:MM", "label": "Alarm label (optional)"}}
       ],
       "updates": [
-        {{"id": 123, "status": "Completed/Dismissed", "reasoning": "why? e.g. User said they already sold it"}}
+        {{"id": 123, "status": "Completed/Dismissed", "reasoning": "..."}}
       ]
     }}
     Priority must be one of: 'High', 'Medium', 'Low'.

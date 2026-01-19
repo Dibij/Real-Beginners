@@ -6,12 +6,17 @@ from .views import (
     CategoryListView, GoogleLoginView, TagListView, NoteAudioDeleteView,
     SearchResultListView, NotificationListView, NotificationMarkReadView,
     AlarmListCreateView, AlarmDetailView,
+    GoogleCalendarAuthView, GoogleCalendarCallbackView, GoogleCalendarStatusView, GoogleCalendarEventsView,
 )
 
 urlpatterns = [
     path('auth/register/', RegisterView.as_view(), name='auth_register'),
     path('auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/google-login/', GoogleLoginView.as_view(), name='google_login'),
+    path('google/auth/', GoogleCalendarAuthView.as_view(), name='google_auth'),
+    path('google/callback/', GoogleCalendarCallbackView.as_view(), name='google_callback'),
+    path('google/status/', GoogleCalendarStatusView.as_view(), name='google_status'),
+    path('google/events/', GoogleCalendarEventsView.as_view(), name='google_events'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/profile/', UserProfileView.as_view(), name='user_profile'),
     

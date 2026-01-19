@@ -58,7 +58,10 @@ class UserPreferenceSerializer(serializers.ModelSerializer):
 class ActionItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = ActionItem
-        fields = ('id', 'item_type', 'content', 'status', 'due_date', 'created_at', 'updated_at', 'note')
+        fields = (
+            'id', 'item_type', 'content', 'status', 'due_date', 
+            'end_time', 'location', 'linked_alarm', 'created_at', 'updated_at', 'note'
+        )
         read_only_fields = ('id', 'created_at', 'updated_at')
 
 class AlarmSerializer(serializers.ModelSerializer):

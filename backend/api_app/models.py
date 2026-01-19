@@ -103,6 +103,9 @@ class ActionItem(models.Model):
     content = models.TextField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
     due_date = models.DateTimeField(null=True, blank=True)
+    end_time = models.DateTimeField(null=True, blank=True)
+    location = models.CharField(max_length=255, null=True, blank=True)
+    linked_alarm = models.ForeignKey('Alarm', on_delete=models.SET_NULL, null=True, blank=True, related_name='linked_items')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -203,3 +206,18 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.type}: {self.title}"
+
+class GoogleOAuthToken(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='google_token')
+    access_token = models.TextField()
+    refresh_token = models.TextField(null=True, blank=True)
+    expires_at = models.DateTimeField()
+    scopes = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'google_oauth_tokens'
+
+    def __str__(self):
+        return f"Google Token for {self.user.email}"
