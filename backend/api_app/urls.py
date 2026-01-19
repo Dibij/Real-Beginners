@@ -7,6 +7,7 @@ from .views import (
     SearchResultListView, NotificationListView, NotificationMarkReadView,
     AlarmListCreateView, AlarmDetailView,
     GoogleCalendarAuthView, GoogleCalendarCallbackView, GoogleCalendarStatusView, GoogleCalendarEventsView,
+    HabitListView, HabitDetailView
 )
 
 urlpatterns = [
@@ -34,4 +35,7 @@ urlpatterns = [
     path('alarms/<int:pk>/', AlarmDetailView.as_view(), name='alarm-detail'),
     path('notifications/', NotificationListView.as_view(), name='notification-list'),
     path('notifications/<int:pk>/read/', NotificationMarkReadView.as_view(), name='notification-mark-read'),
+    
+    path('habits/', HabitListView.as_view(), name='habit-list'),
+    path('habits/<int:pk>/', HabitDetailView.as_view(), name='habit-detail'),
 ]

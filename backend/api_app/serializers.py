@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Category, Note, Tag, UserPreference, NoteAudio, ActionItem, ActionItemHistory, SearchResult, Notification, Alarm
+from .models import (
+    Category, Note, Tag, UserPreference, NoteAudio, ActionItem, 
+    ActionItemHistory, SearchResult, Notification, Alarm, Habit, HabitLog
+)
 
 User = get_user_model()
 
@@ -60,7 +63,7 @@ class ActionItemSerializer(serializers.ModelSerializer):
         model = ActionItem
         fields = (
             'id', 'item_type', 'content', 'status', 'due_date', 
-            'end_time', 'location', 'linked_alarm', 'created_at', 'updated_at', 'note'
+            'end_time', 'location', 'linked_alarm', 'created_at', 'updated_at', 'ai_feedback', 'note'
         )
         read_only_fields = ('id', 'created_at', 'updated_at')
 
@@ -82,7 +85,20 @@ class SearchResultSerializer(serializers.ModelSerializer):
         fields = ('id', 'note', 'query', 'results', 'summary', 'created_at')
         read_only_fields = ('id', 'created_at')
 
+class HabitLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = HabitLog
+        fields = '__all__'
+
+class HabitSerializer(serializers.ModelSerializer):
+    logs = HabitLogSerializer(many=True, read_only=True)
+    class Meta:
+        model = Habit
+        fields = ('id', 'name', 'goal', 'created_at', 'logs')
+
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = '__all__'
+
+

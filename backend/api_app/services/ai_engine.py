@@ -24,22 +24,23 @@ def extract_action_items(content, pending_items=[], current_time=None):
 
     prompt = f"""
     Analyze the note content below. Your goal is to:
-    1. Identify NEW actionable items (Tasks, Reminders, Shopping, Facts).
+    1. Identify NEW actionable items (Tasks, Reminders, Shopping, Facts, HabitLog).
     2. Identify UPDATES to existing pending items based on the context provided.
+    3. Detect intents for Email and Search.
     
     {time_context}
     
     IMPORTANT RULES:
     - Map all 'Todos', 'Jobs', or 'Actions' to the type 'Task'.
-    - Allowed types: 'Task', 'Reminder', 'Shopping', 'Fact'.
-    - DEDUPLICATION: Do NOT create redundant items. If two items refer to the same thing (e.g., 'buy clothes' and 'buy dresses'), MERGE them into one specific item.
-    - CONSOLIDATION: Group similar actions together. Avoid listing the same intent twice with slightly different wording.
-    - RELATIVE TIME: If the user says something like 'in one hour' or 'tomorrow morning', use the {time_context or 'current time'} to calculate the EXACT 'due_date' (YYYY-MM-DD HH:MM:SS) or alarm 'time' (HH:MM). Do NOT use placeholders like 'one hour from now' or 'YYYY-MM-DD'.
-    - INTERVAL ALARMS: If the user says 'create 5 alarms starting at 11 am spacing 15 mins', be smart and calculate the EXACT times for each: '11:00', '11:15', '11:30', '11:45', '12:00'. Add each result as a separate entry in the 'alarms' list.
-    - DUAL EXTRACTION: If a user says 'remind me to buy sausages tonight', extract BOTH a 'Shopping' item with a 'due_date' AND an 'alarm' at that same time. Use matching labels/content for linking.
-    - MEETINGS: If the user says 'schedule a meeting with X at Y', extract it as a 'Meeting' item. 
-      CRITICAL: You MUST extract the 'due_date' (start time) and 'end_time' as EXACT timestamps (YYYY-MM-DD HH:MM:SS) based on the context. If no duration is specified, assume 1 hour.
-      Include 'location' if mentioned. For meetings, always populate 'due_date'.
+    - Allowed types: 'Task', 'Reminder', 'Shopping', 'Fact', 'StudyNote', 'Meeting', 'Habit'.
+    - HABITS: If the user says 'I read 3 pages', 'I ran 2km', 'Finished 1 lesson', extract it as 'Habit'. 
+      Include 'habit_name' (e.g., Reading), 'value' (e.g., 3), and 'unit' (e.g., pages).
+    - STUDY NOTES: If the user says 'I learnt that...', 'I discovered...', or 'Today I found out...', extract it as 'StudyNote'.
+    - EMAIL SHORTCUTS (HARDCODED):
+      - If user says 'email shriya', recipient is 'shriyaawale2007@gmail.com'.
+      - If user says 'email leti' or 'email lettuce', recipient is 'lettuce.cya@gmail.com'.
+    - DEDUPLICATION: Do NOT create redundant items.
+    - RELATIVE TIME: Calculate EXACT timestamps.
     
     {pending_context}
     
@@ -50,20 +51,33 @@ def extract_action_items(content, pending_items=[], current_time=None):
       "priority": "High/Medium/Low",
       "summary": "one sentence summary",
       "new_items": [
-        {{"type": "Task/Reminder/Shopping/Fact/Meeting", "content": "detail", "due_date": "YYYY-MM-DD HH:MM:SS (optional)", "end_time": "YYYY-MM-DD HH:MM:SS (optional)", "location": "string (optional)", "reasoning": "..."}}
+        {{
+          "type": "Task/Reminder/Shopping/Fact/Meeting/Habit/StudyNote", 
+          "content": "detail", 
+          "due_date": "YYYY-MM-DD HH:MM:SS (optional)",
+          "habit_name": "string (optional)", 
+          "value": 0 (optional), 
+          "unit": "string (optional)"
+        }}
       ],
+      "email_intent": {{
+        "detected": true/false,
+        "recipient": "email_address",
+        "subject": "string",
+        "body": "string"
+      }},
+      "search_intent": {{
+        "detected": true/false,
+        "queries": ["query1", "query2"]
+      }},
       "alarms": [
-        {{"time": "HH:MM", "label": "Alarm label (optional)"}}
+        {
+          "time": "HH:MM", 
+          "label": "string"
+        }
       ],
-      "updates": [
-        {{"id": 123, "status": "Completed/Dismissed", "reasoning": "..."}}
-      ]
+      "updates": [...]
     }}
-    Priority must be one of: 'High', 'Medium', 'Low'.
-    Status must be one of: 'Pending', 'Completed', 'Dismissed'.
-    
-    If the user says they bought something, did something, or finished something, mark the matching ID in 'updates' as 'Completed'.
-    If the user asks to create an alarm, put it in the 'alarms' list.
     """
     try:
         logger.info("--- CALLING OLLAMA ---")

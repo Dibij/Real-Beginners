@@ -91,6 +91,8 @@ class ActionItem(models.Model):
         ('Reminder', 'Reminder'),
         ('Shopping', 'Shopping'),
         ('Fact', 'Fact'),
+        ('StudyNote', 'StudyNote'),
+        ('Habit', 'Habit'),
     ]
     STATUS_CHOICES = [
         ('Pending', 'Pending'),
@@ -106,6 +108,7 @@ class ActionItem(models.Model):
     end_time = models.DateTimeField(null=True, blank=True)
     location = models.CharField(max_length=255, null=True, blank=True)
     linked_alarm = models.ForeignKey('Alarm', on_delete=models.SET_NULL, null=True, blank=True, related_name='linked_items')
+    ai_feedback = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -221,3 +224,32 @@ class GoogleOAuthToken(models.Model):
 
     def __str__(self):
         return f"Google Token for {self.user.email}"
+
+
+class Habit(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='habits')
+    name = models.CharField(max_length=255)
+    goal = models.CharField(max_length=255, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'habits'
+
+    def __str__(self):
+        return f"{self.name} ({self.user.username})"
+
+class HabitLog(models.Model):
+    habit = models.ForeignKey(Habit, on_delete=models.CASCADE, related_name='logs')
+    note = models.ForeignKey(Note, on_delete=models.SET_NULL, null=True, blank=True)
+    value = models.FloatField()
+    unit = models.CharField(max_length=50, default='units')
+    comment = models.TextField(null=True, blank=True)
+    ai_feedback = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'habit_logs'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.habit.name}: {self.value} {self.unit}"

@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import api from '@/utils/api';
 import { useAuth } from '@/context/AuthContext';
-import { Mic, FileText, Settings, Plus, Tag, ShoppingBag, Info, History, Globe, ExternalLink, Bell, CheckCircle } from 'lucide-react';
+import { Mic, FileText, Settings, Plus, Tag, ShoppingBag, Info, History, Globe, ExternalLink, Bell, CheckCircle, Calendar, Activity, LogOut, Search } from 'lucide-react';
+import SettingsModal from './SettingsModal';
+import { useTheme } from '@/context/ThemeContext';
 
 interface SidebarProps {
     onNewNote?: () => void;
@@ -25,7 +27,9 @@ export default function Sidebar({
 }: SidebarProps) {
     const { user } = useAuth();
     const router = useRouter();
+    const { theme } = useTheme();
     const [categories, setCategories] = React.useState<any[]>([]);
+    const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
 
     React.useEffect(() => {
         if (user) {
@@ -99,8 +103,35 @@ export default function Sidebar({
                             <Globe className="w-5 h-5" />
                             <span>Web Search</span>
                         </button>
+                        <button
+                            onClick={() => router.push('/clock')}
+                            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                        >
+                            <Bell className="w-5 h-5" />
+                            <span>Clock & Alarms</span>
+                        </button>
+                        <button
+                            onClick={() => router.push('/calendar')}
+                            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                        >
+                            <Calendar className="w-5 h-5" />
+                            <span>Calendar</span>
+                        </button>
                     </div>
                 </div>
+                <div>
+                    <h3 className="px-3 text-xs font-bold text-zinc-400 uppercase tracking-widest mb-3">Health & Growth</h3>
+                    <div className="px-2">
+                        <button
+                            onClick={() => router.push('/dashboard?type=Habit')}
+                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${selectedSmartCategory === 'Habit' ? 'text-orange-600 font-bold bg-orange-50 dark:bg-orange-900/10' : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
+                        >
+                            <Activity className="w-5 h-5" />
+                            <span>Habit Tracker</span>
+                        </button>
+                    </div>
+                </div>
+
 
                 <div>
                     <h3 className="px-3 text-xs font-bold text-zinc-400 uppercase tracking-widest mb-3">Smart Insights</h3>
@@ -109,7 +140,7 @@ export default function Sidebar({
                             { name: 'Tasks', type: 'Task', icon: CheckCircle },
                             { name: 'Reminders', type: 'Reminder', icon: Bell },
                             { name: 'Shopping', type: 'Shopping', icon: ShoppingBag },
-                            { name: 'Facts', type: 'Fact', icon: Info },
+                            { name: 'Study Notes', type: 'StudyNote', icon: FileText },
                         ].map((item) => (
                             <button
                                 key={item.type}
@@ -151,9 +182,23 @@ export default function Sidebar({
                         </div>
                     </div>
                 )}
-
             </nav>
 
+            <div className="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                <button
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors mb-2"
+                >
+                    <Settings className="w-5 h-5 text-zinc-400" />
+                    <span className="font-medium">Settings</span>
+                </button>
+                <div className="px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                    <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{theme} Mode</span>
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+                </div>
+            </div>
+
+            <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
         </div>
     );
 }

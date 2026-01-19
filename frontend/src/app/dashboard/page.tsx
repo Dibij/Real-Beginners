@@ -4,9 +4,10 @@ import { useState, useEffect, Suspense, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import SettingsModal from '@/components/SettingsModal';
 import api from '@/utils/api';
 import { useAuth } from '@/context/AuthContext';
-import { Mic, Clock, Tag as TagIcon, ChevronRight, Plus, Search, LogIn, CheckCircle, Circle, Package, History, Activity, Bell, LogOut, Settings, User as UserIcon, Globe, ExternalLink } from 'lucide-react';
+import { Mic, FileText, CheckCircle, Bell, Tag as TagIcon, Plus, Search, Settings, Globe, ExternalLink, History, LogOut, Calendar, Activity, Info, ChevronRight, Clock, User as UserIcon } from 'lucide-react';
 import CreateNoteModal from '@/components/CreateNoteModal';
 import NoteDetailModal from '@/components/NoteDetailModal';
 
@@ -53,6 +54,7 @@ function DashboardContent() {
     // Header State
     const [notifications, setNotifications] = useState<any[]>([]);
     const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const { logout } = useAuth();
 
@@ -392,7 +394,13 @@ function DashboardContent() {
                                         <UserIcon className="w-4 h-4" />
                                         <span>Profile</span>
                                     </button>
-                                    <button className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg transition-colors">
+                                    <button
+                                        onClick={() => {
+                                            setIsSettingsOpen(true);
+                                            setIsProfileOpen(false);
+                                        }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                                    >
                                         <Settings className="w-4 h-4" />
                                         <span>Settings</span>
                                     </button>
@@ -429,7 +437,8 @@ function DashboardContent() {
                                                 {selectedSmartCategory === 'Task' && <CheckCircle className="w-6 h-6" />}
                                                 {selectedSmartCategory === 'Reminder' && <Bell className="w-6 h-6" />}
                                                 {selectedSmartCategory === 'Shopping' && <TagIcon className="w-6 h-6" />}
-                                                {selectedSmartCategory === 'Fact' && <Activity className="w-6 h-6" />}
+                                                {selectedSmartCategory === 'StudyNote' && <FileText className="w-6 h-6" />}
+                                                {selectedSmartCategory === 'Habit' && <Activity className="w-6 h-6 text-orange-500" />}
                                             </div>
                                             <button
                                                 onClick={() => toggleActionItemStatus(item.id, item.status)}
@@ -441,9 +450,21 @@ function DashboardContent() {
                                                 {item.status}
                                             </button>
                                         </div>
-                                        <h3 className={`text-lg font-bold dark:text-white mb-4 ${item.status === 'Completed' ? 'line-through opacity-50' : ''}`}>
+                                        <h4 className="text-lg font-bold text-zinc-900 dark:text-white mb-2 group-hover:text-blue-600 transition-colors">
                                             {item.content}
-                                        </h3>
+                                        </h4>
+
+                                        {item.ai_feedback && (
+                                            <div className="mt-4 p-3 bg-blue-50/50 dark:bg-blue-900/10 rounded-2xl border border-blue-100/50 dark:border-blue-900/20">
+                                                <div className="flex items-center gap-2 mb-1 text-blue-600 dark:text-blue-400">
+                                                    <Info className="w-4 h-4" />
+                                                    <span className="text-[10px] font-black uppercase tracking-wider">AI Coach Insight</span>
+                                                </div>
+                                                <p className="text-sm text-zinc-600 dark:text-zinc-400 italic">
+                                                    "{item.ai_feedback}"
+                                                </p>
+                                            </div>
+                                        )}
                                         {item.note && (
                                             <div
                                                 onClick={() => setSelectedNoteId(item.note)}
@@ -564,19 +585,24 @@ function DashboardContent() {
                 onRefresh={() => fetchNotes(selectedCategoryId)}
             />
 
-            {/* Processing Toast */}
+            {/* Voice Transcription Indicator */}
             {isProcessing && (
-                <div className="fixed bottom-6 right-6 z-50 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-5">
-                    <div className="relative">
-                        <div className="w-10 h-10 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
-                        <Globe className="w-5 h-5 text-purple-600 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                <div className="fixed bottom-6 right-6 flex items-center gap-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-6 py-4 rounded-3xl shadow-2xl animate-in slide-in-from-bottom-10 duration-500 z-50">
+                    <div className="flex gap-1.5 h-6 items-center">
+                        {[1, 2, 3, 4, 5, 6].map((i) => (
+                            <div key={i} className="w-1 bg-blue-500 rounded-full animate-pulse transition-all duration-300" style={{ height: `${20 + Math.random() * 80}%`, animationDelay: `${i * 0.1}s` }}></div>
+                        ))}
                     </div>
-                    <div>
-                        <p className="font-bold text-sm dark:text-white">AI Agent Active</p>
-                        <p className="text-xs text-zinc-500">Transcribing, Researching & Summarizing...</p>
+                    <div className="flex flex-col">
+                        <span className="text-sm font-black dark:text-white tracking-tight uppercase italic flex items-center gap-2">
+                            Transcribing <span className="flex h-1.5 w-1.5 rounded-full bg-red-500 animate-ping"></span>
+                        </span>
+                        <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest leading-none">Processing Note...</span>
                     </div>
                 </div>
             )}
+
+            <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
         </div>
     );
 }
