@@ -1,0 +1,73 @@
+import json
+import requests
+import logging
+import sys
+
+logger = logging.getLogger(__name__)
+
+def extract_action_items(content, pending_items=[]):
+    """
+    Calls local Ollama (Mistral) to extract entities and update state.
+    pending_items: List of current pending ActionItem dicts.
+    """
+    logger.info(f"--- AI EXTRACTION STARTING FOR CONTENT: '{content[:100]}...' ---")
+    sys.stdout.flush()
+    url = "http://localhost:11434/api/generate"
+    
+    pending_context = ""
+    if pending_items:
+        logger.info(f"--- PROVIDING CONTEXT: {len(pending_items)} pending items ---")
+        pending_context = "Current pending items (context):\n" + "\n".join([f"- ID {item['id']}: {item['content']} ({item['item_type']})" for item in pending_items])
+
+    prompt = f"""
+    Analyze the note content below. Your goal is to:
+    1. Identify NEW actionable items (Tasks, Reminders, Shopping, Facts).
+    2. Identify UPDATES to existing pending items based on the context provided.
+    
+    IMPORTANT RULES:
+    - Map all 'Todos', 'Jobs', or 'Actions' to the type 'Task'.
+    - Allowed types: 'Task', 'Reminder', 'Shopping', 'Fact'.
+    - DEDUPLICATION: Do NOT create redundant items. If two items refer to the same thing (e.g., 'buy clothes' and 'buy dresses'), MERGE them into one specific item.
+    - CONSOLIDATION: Group similar actions together. Avoid listing the same intent twice with slightly different wording.
+    
+    {pending_context}
+    
+    Content: "{content}"
+    
+    Return ONLY valid JSON in this format:
+    {{
+      "priority": "High/Medium/Low",
+      "summary": "one sentence summary",
+      "new_items": [
+        {{"type": "Task/Reminder/Shopping/Fact", "content": "detail", "reasoning": "why did you add this? e.g. User mentioned wanting to sell laptop"}}
+      ],
+      "updates": [
+        {{"id": 123, "status": "Completed/Dismissed", "reasoning": "why? e.g. User said they already sold it"}}
+      ]
+    }}
+    Priority must be one of: 'High', 'Medium', 'Low'.
+    Status must be one of: 'Pending', 'Completed', 'Dismissed'.
+    
+    If the user says they bought something, did something, or finished something, mark the matching ID in 'updates' as 'Completed'.
+    """
+    try:
+        logger.info("--- CALLING OLLAMA ---")
+        sys.stdout.flush()
+        res = requests.post(url, json={
+            "model": "mistral:latest",
+            "prompt": prompt,
+            "stream": False,
+            "format": "json"
+        }, timeout=180)
+        res.raise_for_status()
+        data = res.json()
+        raw_response = data.get('response', '{}')
+        logger.info(f"--- OLLAMA RAW RESPONSE: {raw_response} ---")
+        analysis = json.loads(raw_response)
+        logger.info(f"--- PARSED ANALYSIS: Found {len(analysis.get('new_items', []))} new items, {len(analysis.get('updates', []))} updates ---")
+        sys.stdout.flush()
+        return analysis
+    except Exception as e:
+        logger.error(f"!!! AI extraction error: {e} !!!")
+        sys.stdout.flush()
+        return {"priority": "Low", "new_items": [], "updates": [], "summary": "Note processed"}
