@@ -5,6 +5,7 @@ from .views import (
     ActionItemListView, ActionItemUpdateView, ActionItemHistoryListView,
     CategoryListView, GoogleLoginView, TagListView, NoteAudioDeleteView,
     SearchResultListView, NotificationListView, NotificationMarkReadView,
+    AlarmListCreateView, AlarmDetailView,
 )
 
 urlpatterns = [
@@ -24,6 +25,8 @@ urlpatterns = [
     path('categories/', CategoryListView.as_view(), name='category_list'),
     path('tags/', TagListView.as_view(), name='tag_list'),
     path('web-search-results/', SearchResultListView.as_view(), name='web-search-results'),
+    path('alarms/', AlarmListCreateView.as_view(), name='alarm-list-create'),
+    path('alarms/<int:pk>/', AlarmDetailView.as_view(), name='alarm-detail'),
     path('notifications/', NotificationListView.as_view(), name='notification-list'),
     path('notifications/<int:pk>/read/', NotificationMarkReadView.as_view(), name='notification-mark-read'),
 ]

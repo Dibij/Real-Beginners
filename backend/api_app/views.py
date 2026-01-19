@@ -1,13 +1,14 @@
 from rest_framework import generics, permissions, status, response, pagination
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
-from .models import Note, Category, Tag, NoteAudio, ActionItem, ActionItemHistory, SearchResult, Notification
-from .serializers import UserSerializer, NoteSerializer, CategorySerializer, TagSerializer, ActionItemSerializer, ActionItemHistorySerializer
+from .models import Note, Category, Tag, NoteAudio, ActionItem, ActionItemHistory, SearchResult, Notification, Alarm
+from .serializers import UserSerializer, NoteSerializer, CategorySerializer, TagSerializer, ActionItemSerializer, ActionItemHistorySerializer, AlarmSerializer
 from django.utils import timezone
 from .utils import derive_key, encrypt_content, decrypt_content
 from .services.transcription import transcribe_audio
 from .services.ai_engine import extract_action_items
 from .services.web_search import perform_web_search, detect_search_intent
+from .services.email_webhook import detect_email_intent, trigger_email_webhook
 import logging
 
 logger = logging.getLogger(__name__)
@@ -131,8 +132,9 @@ class NoteListCreateView(generics.ListCreateAPIView):
                 
                 # AI Extraction
                 logger.info("--- ASYNC AI EXTRACTION ---")
+                current_time_str = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
                 pending_items = ActionItem.objects.filter(user=user, status='Pending').values('id', 'content', 'item_type')
-                ai_results = extract_action_items(full_transcript, list(pending_items))
+                ai_results = extract_action_items(full_transcript, list(pending_items), current_time=current_time_str)
                 logger.info(f"--- AI RESULTS: {ai_results} ---")
                 
                 note.priority = ai_results.get('priority', 'Low').lower()
@@ -160,53 +162,109 @@ class NoteListCreateView(generics.ListCreateAPIView):
                 
                 # Create New Items
                 for item in ai_results.get('new_items', []):
-                    logger.info(f"--- CREATING ACTION ITEM: {item.get('type')} - {item.get('content')} ---")
-                    ai_item = ActionItem.objects.create(
-                        user=user, note=note,
-                        item_type=item.get('type', 'Task'),
-                        content=item.get('content', ''),
+                    due_date_str = item.get('due_date')
+                    due_date_val = None
+                    if due_date_str and "optional" not in due_date_str.lower() and "yyyy" not in due_date_str.lower():
+                        from django.utils.dateparse import parse_datetime
+                        try:
+                            due_date_val = parse_datetime(due_date_str)
+                            if not due_date_val:
+                                logger.warning(f"Failed to parse due_date: {due_date_str}")
+                        except Exception as e:
+                            logger.error(f"Error parsing due_date: {e}")
+
+                    # Deduplication check
+                    content = item.get('content', '')
+                    item_type = item.get('type', 'Task')
+                    existing_item = ActionItem.objects.filter(
+                        user=user, 
+                        item_type=item_type, 
+                        content=content, 
+                        due_date=due_date_val,
                         status='Pending'
-                    )
-                    ActionItemHistory.objects.create(
-                        user=user, note=note,
-                        action_item_content=ai_item.content,
-                        item_type=ai_item.item_type,
-                        action_type='Added by AI',
-                        details=f"Extracted from note {note.id}",
-                        reasoning=item.get('reasoning', "Extracted from voice note")
-                    )
+                    ).exists()
+
+                    if not existing_item:
+                        ai_item = ActionItem.objects.create(
+                            user=user, note=note,
+                            item_type=item_type,
+                            content=content,
+                            due_date=due_date_val,
+                            status='Pending'
+                        )
+                        ActionItemHistory.objects.create(
+                            user=user, note=note,
+                            action_item_content=ai_item.content,
+                            item_type=ai_item.item_type,
+                            action_type='Added by AI',
+                            details=f"Extracted from note {note.id}",
+                            reasoning=item.get('reasoning', "Extracted from voice note")
+                        )
+                    else:
+                         logger.info(f"Duplicate ActionItem skipped: {content}")
+
+                # Create Alarms
+                for alarm in ai_results.get('alarms', []):
+                    time_val = alarm.get('time')
+                    label_val = alarm.get('label', 'Alarm')
+                    logger.info(f"--- CREATING ALARM: {time_val} - {label_val} ---")
+                    
+                    # Deduplication check
+                    existing_alarm = Alarm.objects.filter(
+                        user=user,
+                        time=time_val,
+                        label=label_val,
+                        is_active=True
+                    ).exists()
+
+                    if not existing_alarm:
+                        try:
+                            Alarm.objects.create(
+                                user=user,
+                                time=time_val,
+                                label=label_val
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to create alarm: {e}")
+                    else:
+                        logger.info(f"Duplicate Alarm skipped: {time_val}")
             else:
                 note.summary = "Voice note (no transcription)"
             
             note.save()
             
-            # Web Search Detection (after saving note)
+            # Email Intent Detection
             if transcripts:
-                logger.info(f"--- DETECTING INTENT IN: '{full_transcript}' ---")
+                if detect_email_intent(full_transcript):
+                    logger.info("Detected Intent: Email")
+                    trigger_email_webhook(full_transcript)
+                
+                # Check search if not email (or both?) - Assuming independent checks
                 search_queries = detect_search_intent(full_transcript)
-                if not search_queries:
-                    logger.info("--- NO SEARCH INTENT DETECTED ---")
-                for query in search_queries:
-                    logger.info(f"--- DETECTED SEARCH INTENT: '{query}' ---")
-                    search_result = perform_web_search(query)
-                    if search_result.get('results'):
-                        SearchResult.objects.create(
-                            user=user,
-                            note=note,
-                            query=query,
-                            results=search_result.get('results', []),
-                            summary=search_result.get('summary', '')
-                        )
-                        # Create Notification
-                        Notification.objects.create(
-                            user=user,
-                            type='search',
-                            title=f"Search Completed: {query[:30]}...",
-                            message=f"Found {len(search_result.get('results', []))} results for your query. Click to view details.",
-                            link='/dashboard'
-                        )
-                        logger.info(f"--- SEARCH SAVED: '{query}' with {len(search_result.get('results', []))} results ---")
-            
+                if search_queries:
+                    logger.info("Detected Intent: Search")
+                    for query in search_queries:
+                        search_result = perform_web_search(query)
+                        if search_result.get('results'):
+                            SearchResult.objects.create(
+                                user=user,
+                                note=note,
+                                query=query,
+                                results=search_result.get('results', []),
+                                summary=search_result.get('summary', '')
+                            )
+                            # Create Notification
+                            Notification.objects.create(
+                                user=user,
+                                type='search',
+                                title=f"Search Completed: {query[:30]}...",
+                                message=f"Found {len(search_result.get('results', []))} results for your query. Click to view details.",
+                                link='/dashboard'
+                            )
+                else:
+                    if not detect_email_intent(full_transcript):
+                         logger.info("Detected Intent: None")
+
             logger.info(f"--- NOTE {note_id} PROCESSING COMPLETE ---")
         except Exception as e:
             logger.error(f"--- ERROR PROCESSING NOTE {note_id}: {e} ---")
@@ -230,7 +288,7 @@ class ActionItemListView(generics.ListCreateAPIView):
         return queryset
 
     def perform_create(self, serializer):
-        # Allow manual creation without a note (or link to a "manual" dummy note)
+        # Allow manual creation without a note
         serializer.save(user=self.request.user)
 
 class ActionItemUpdateView(generics.RetrieveUpdateDestroyAPIView):
@@ -270,6 +328,23 @@ class ActionItemUpdateView(generics.RetrieveUpdateDestroyAPIView):
             details="Item removed"
         )
         instance.delete()
+
+class AlarmListCreateView(generics.ListCreateAPIView):
+    serializer_class = AlarmSerializer
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get_queryset(self):
+        return Alarm.objects.filter(user=self.request.user).order_by('time')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+class AlarmDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = AlarmSerializer
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get_queryset(self):
+        return Alarm.objects.filter(user=self.request.user)
 
 class NoteDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = NoteSerializer

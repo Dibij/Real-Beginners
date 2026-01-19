@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Category, Note, Tag, UserPreference, NoteAudio, ActionItem, ActionItemHistory, SearchResult, Notification
+from .models import Category, Note, Tag, UserPreference, NoteAudio, ActionItem, ActionItemHistory, SearchResult, Notification, Alarm
 
 User = get_user_model()
 
@@ -58,8 +58,14 @@ class UserPreferenceSerializer(serializers.ModelSerializer):
 class ActionItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = ActionItem
-        fields = ('id', 'item_type', 'content', 'status', 'created_at', 'updated_at', 'note')
+        fields = ('id', 'item_type', 'content', 'status', 'due_date', 'created_at', 'updated_at', 'note')
         read_only_fields = ('id', 'created_at', 'updated_at')
+
+class AlarmSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Alarm
+        fields = ('id', 'time', 'label', 'is_active', 'created_at')
+        read_only_fields = ('id', 'created_at')
 
 class ActionItemHistorySerializer(serializers.ModelSerializer):
     class Meta:

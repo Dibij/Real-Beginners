@@ -102,6 +102,7 @@ class ActionItem(models.Model):
     item_type = models.CharField(max_length=20, choices=ITEM_TYPE_CHOICES, default='Task')
     content = models.TextField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
+    due_date = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -114,6 +115,20 @@ class ActionItem(models.Model):
 
     def __str__(self):
         return f"{self.item_type}: {self.content[:30]} ({self.status})"
+
+class Alarm(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='alarms')
+    time = models.TimeField()
+    label = models.CharField(max_length=255, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'alarms'
+        ordering = ['time']
+
+    def __str__(self):
+        return f"Alarm at {self.time} ({'On' if self.is_active else 'Off'})"
 
 class ActionItemHistory(models.Model):
     ACTION_TYPES = [
